@@ -2,21 +2,28 @@
 
 # This script installs and configures Tailscale on a LibreELEC system.
 # It checks for existing installations and ensures the SSH server is enabled at boot.
-# It can be run multiple times safely.
-
-# Stop on any error
-set -e
+# It can be run multiple times safely. v3 - increased compatibility.
 
 # --- Configuration ---
 INSTALL_DIR="/storage/tailscale"
 AUTORUN_SCRIPT_PATH="/storage/.config/autostart.sh"
 
-# --- Function to display colored output ---
+# --- Function to display colored output (POSIX-compliant) ---
 function cecho {
-    RED="\033[0;31m"; GREEN="\033[0;32m"; YELLOW="\033[0;33m";
-    BLUE="\033[0;34m"; BOLD="\033[1m"; NC="\033[0m";
-    COLOR_NAME=$(echo "$1" | tr '[:lower:]' '[:upper:]')
-    printf "%b%s%b\n" "${!COLOR_NAME}" "$2" "${NC}"
+    local color_code=""
+    case "$1" in
+        red)    color_code="\033[0;31m" ;;
+        green)  color_code="\033[0;32m" ;;
+        yellow) color_code="\033[0;33m" ;;
+        blue)   color_code="\033[0;34m" ;;
+        bold)   color_code="\033[1m" ;;
+        *)
+            echo "$2"
+            return
+            ;;
+    esac
+    local NC="\033[0m"
+    printf "%b%s%b\n" "${color_code}" "$2" "${NC}"
 }
 
 cecho bold "--- Tailscale Installer & Configurator for LibreELEC ---"
