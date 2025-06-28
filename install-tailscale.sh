@@ -1,153 +1,132 @@
 #!/bin/bash
 
 # This script installs and configures Tailscale on a LibreELEC system.
-# It automates the process of downloading the static binaries,
-# setting up the daemon to run on startup, and provides instructions
-# for the user to log in.
+# It checks for existing installations and ensures the SSH server is enabled at boot.
+# It can be run multiple times safely.
 
 # Stop on any error
 set -e
 
-# Function to display colored output
-#   $1: color (red, green, yellow, blue, bold)
-#   $2: message
-function cecho {
-    RED="\033[0;31m"
-    GREEN="\033[0;32m"
-    YELLOW="\033[0;33m"
-    BLUE="\033[0;34m"
-    BOLD="\033[1m"
-    NC="\033[0m" # No Color
+# --- Configuration ---
+INSTALL_DIR="/storage/tailscale"
+AUTORUN_SCRIPT_PATH="/storage/.config/autostart.sh"
 
-    case "$1" in
-        red)
-            printf "${RED}${2}${NC}\n"
-            ;;
-        green)
-            printf "${GREEN}${2}${NC}\n"
-            ;;
-        yellow)
-            printf "${YELLOW}${2}${NC}\n"
-            ;;
-        blue)
-            printf "${BLUE}${2}${NC}\n"
-            ;;
-        bold)
-            printf "${BOLD}${2}${NC}\n"
-            ;;
-        *)
-            echo "$2"
-            ;;
-    esac
+# --- Function to display colored output ---
+function cecho {
+    RED="\033[0;31m"; GREEN="\033[0;32m"; YELLOW="\033[0;33m";
+    BLUE="\033[0;34m"; BOLD="\033[1m"; NC="\033[0m";
+    COLOR_NAME=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+    printf "%b%s%b\n" "${!COLOR_NAME}" "$2" "${NC}"
 }
 
-cecho bold "--- Starting Tailscale Installer for LibreELEC ---"
+cecho bold "--- Tailscale Installer & Configurator for LibreELEC ---"
 
-# Check if running as root
+# --- Check if running as root ---
 if [ "$(id -u)" -ne 0 ]; then
   cecho red "Error: This script must be run as root."
   exit 1
 fi
 
-# Determine Architecture
-ARCH=$(uname -m)
-case "$ARCH" in
-  x86_64)
-    TS_ARCH="amd64"
-    ;;
-  aarch64)
-    TS_ARCH="arm64"
-    ;;
-  armv7l)
-    TS_ARCH="arm"
-    ;;
-  *)
-    cecho red "Unsupported architecture: $ARCH"
-    exit 1
-    ;;
-esac
+# --- Installation Phase ---
+if [ -f "${INSTALL_DIR}/tailscaled" ]; then
+    cecho green "Tailscale is already installed. Skipping installation."
+    INSTALLED_VERSION=$(${INSTALL_DIR}/tailscale --version)
+    cecho blue "Installed version: ${INSTALLED_VERSION}"
+else
+    cecho bold "Starting new Tailscale installation..."
 
-cecho blue "Detected architecture: $ARCH (Tailscale architecture: $TS_ARCH)"
+    # Determine Architecture
+    ARCH=$(uname -m)
+    case "$ARCH" in
+      x86_64) TS_ARCH="amd64" ;;
+      aarch64) TS_ARCH="arm64" ;;
+      armv7l) TS_ARCH="arm" ;;
+      *)
+        cecho red "Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+    esac
+    cecho blue "Detected architecture: $ARCH (Tailscale architecture: $TS_ARCH)"
 
-# Fetch the latest stable version number
-cecho blue "Finding the latest stable Tailscale version..."
-LATEST_VERSION=$(curl -s https://pkgs.tailscale.com/stable/ | grep -o 'tailscale_[0-9.]*_' | sed 's/tailscale_//;s/_//' | sort -V | tail -n1)
+    # Fetch the latest stable version number
+    cecho blue "Finding the latest stable Tailscale version..."
+    LATEST_VERSION=$(curl -s https://pkgs.tailscale.com/stable/ | grep -o 'tailscale_[0-9.]*_' | sed 's/tailscale_//;s/_//' | sort -V | tail -n1)
 
-if [ -z "$LATEST_VERSION" ]; then
-    cecho red "Could not determine the latest Tailscale version. Exiting."
-    exit 1
+    if [ -z "$LATEST_VERSION" ]; then
+        cecho red "Could not determine the latest Tailscale version. Exiting."
+        exit 1
+    fi
+    cecho green "Latest stable version found: $LATEST_VERSION"
+
+    # Define file and directory names
+    TGZ_FILE="tailscale_${LATEST_VERSION}_${TS_ARCH}.tgz"
+    DOWNLOAD_URL="https://pkgs.tailscale.com/stable/${TGZ_FILE}"
+
+    # Download and extract
+    mkdir -p "${INSTALL_DIR}"
+    cd "${INSTALL_DIR}"
+    cecho blue "Downloading Tailscale v${LATEST_VERSION}..."
+    wget -q -O "${TGZ_FILE}" "${DOWNLOAD_URL}"
+    cecho blue "Extracting..."
+    tar xvf "${TGZ_FILE}" --strip-components=1
+    rm "${TGZ_FILE}"
+    chmod +x tailscale tailscaled
+    cecho green "Installation complete."
 fi
 
-cecho green "Latest stable version found: $LATEST_VERSION"
+# --- Configuration Phase ---
+cecho bold "\nVerifying startup configuration..."
 
-# Define file and directory names
-TS_VERSION_ARCH="tailscale_${LATEST_VERSION}_${TS_ARCH}"
-TGZ_FILE="${TS_VERSION_ARCH}.tgz"
-DOWNLOAD_URL="https://pkgs.tailscale.com/stable/${TGZ_FILE}"
-INSTALL_DIR="/storage/tailscale"
-
-# Create installation directory
-cecho blue "Creating installation directory at ${INSTALL_DIR}"
-mkdir -p "${INSTALL_DIR}"
-cd "${INSTALL_DIR}"
-
-# Download the binary - CORRECTED LINE
-cecho blue "Downloading Tailscale binary from ${DOWNLOAD_URL}..."
-wget -q -O "${TGZ_FILE}" "${DOWNLOAD_URL}"
-
-# Extract the binary
-cecho blue "Extracting ${TGZ_FILE}..."
-tar xvf "${TGZ_FILE}" --strip-components=1
-rm "${TGZ_FILE}"
-cecho green "Extraction complete."
-
-# Make binaries executable (should be already, but good practice)
-chmod +x tailscale tailscaled
-
-# Create autostart.sh script
-AUTORUN_SCRIPT_PATH="/storage/.config/autostart.sh"
-cecho blue "Configuring Tailscale to run on startup using ${AUTORUN_SCRIPT_PATH}..."
-
-# Create the .config directory if it doesn't exist
+# Create autostart directory and script if they don't exist
 mkdir -p /storage/.config
-
-# Create the autostart script if it doesn't exist
 if [ ! -f "$AUTORUN_SCRIPT_PATH" ]; then
+    cecho yellow "Creating new autostart script at ${AUTORUN_SCRIPT_PATH}"
     touch "$AUTORUN_SCRIPT_PATH"
     chmod +x "$AUTORUN_SCRIPT_PATH"
     echo "#!/bin/bash" > "$AUTORUN_SCRIPT_PATH"
 fi
 
-# Check if Tailscale is already in the autostart script
+# Check for and add the Tailscale daemon to autostart
 if grep -q "tailscaled" "$AUTORUN_SCRIPT_PATH"; then
-    cecho yellow "Tailscale daemon already appears to be configured in autostart.sh. Skipping."
+    cecho green "OK: Tailscale daemon is already configured to start at boot."
 else
-    # Add the command to autostart.sh
+    cecho yellow "Adding Tailscale daemon to startup script..."
     {
         echo ""
-        echo "# Start Tailscale daemon"
+        echo "# Start Tailscale daemon in the background"
         echo "(cd ${INSTALL_DIR} && ./tailscaled --state=${INSTALL_DIR}/tailscaled.state) &"
     } >> "$AUTORUN_SCRIPT_PATH"
-    cecho green "Added Tailscale daemon to autostart.sh"
+    cecho green "Daemon configured."
 fi
 
-cecho bold "--- Installation and Configuration Complete! ---"
-echo ""
+# Check for and add 'tailscale up --ssh' to autostart
+if grep -q "tailscale up" "$AUTORUN_SCRIPT_PATH"; then
+    cecho green "OK: 'tailscale up' command is already configured to run at boot."
+else
+    cecho yellow "Adding 'tailscale up --ssh' to startup script..."
+    {
+        echo ""
+        echo "# Connect to Tailnet and enable SSH, after a short delay"
+        echo "(sleep 10 && ${INSTALL_DIR}/tailscale up --ssh) &"
+    } >> "$AUTORUN_SCRIPT_PATH"
+    cecho green "SSH startup command configured."
+fi
+
+# --- Final Instructions ---
+cecho bold "\n--- Configuration Verified ---"
+echo
 cecho bold "NEXT STEPS:"
-echo "1. The Tailscale daemon needs to be started manually for the first time."
-echo "   Or, you can just reboot the system."
-echo ""
-cecho bold "   To start it now, run this command:"
-cecho yellow "   (cd ${INSTALL_DIR} && ./tailscaled --state=${INSTALL_DIR}/tailscaled.state) &"
-echo ""
-cecho bold "2. Once the daemon is running, you need to log in to your Tailnet."
-cecho bold "   Run the following command:"
-cecho yellow "   ${INSTALL_DIR}/tailscale up"
-echo ""
-echo "   This will generate a login URL. Copy and paste this URL into a browser"
-echo "   on another device to authenticate and add this LibreELEC machine to your Tailnet."
-echo ""
-cecho bold "3. To check the status of Tailscale at any time, run:"
-cecho yellow "   ${INSTALL_DIR}/tailscale status"
-echo ""
-cecho green "Enjoy using Tailscale on LibreELEC!"
+echo "1. If this is a new installation, you must run 'tailscale up' manually once to log in."
+echo "   If the device is already on your Tailnet, a reboot is all you need."
+echo
+cecho bold "   To log in for the first time, run this command:"
+cecho yellow "   ${INSTALL_DIR}/tailscale up --ssh"
+echo
+echo "   This will give you a URL to authenticate the device."
+echo
+echo "2. After authenticating, a reboot will ensure the full startup process works correctly."
+cecho bold "   To reboot now, type:"
+cecho yellow "   reboot"
+echo
+echo "3. You can then connect to this device from any other machine on your Tailnet by running:"
+cecho yellow "   ssh root@<LibreELEC-Tailscale-IP-or-Name>"
