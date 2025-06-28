@@ -71,9 +71,6 @@ cecho blue "Detected architecture: $ARCH (Tailscale architecture: $TS_ARCH)"
 
 # Fetch the latest stable version number
 cecho blue "Finding the latest stable Tailscale version..."
-# The URL in the original post is for the human-readable page.
-# We'll parse the pkgs.tailscale.com/stable/ listing to find the latest version.
-# This is a more robust way to get the latest version.
 LATEST_VERSION=$(curl -s https://pkgs.tailscale.com/stable/ | grep -o 'tailscale_[0-9.]*_' | sed 's/tailscale_//;s/_//' | sort -V | tail -n1)
 
 if [ -z "$LATEST_VERSION" ]; then
@@ -94,15 +91,12 @@ cecho blue "Creating installation directory at ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
 cd "${INSTALL_DIR}"
 
-# Download the binary
+# Download the binary - CORRECTED LINE
 cecho blue "Downloading Tailscale binary from ${DOWNLOAD_URL}..."
-wget -q --show-progress -O "${TGZ_FILE}" "${DOWNLOAD_URL}"
+wget -q -O "${TGZ_FILE}" "${DOWNLOAD_URL}"
 
 # Extract the binary
 cecho blue "Extracting ${TGZ_FILE}..."
-# The tarball contains a single directory, e.g., "tailscale_1.28.0_amd64".
-# We use --strip-components=1 to pull the contents out of that directory
-# and place them directly into our $INSTALL_DIR.
 tar xvf "${TGZ_FILE}" --strip-components=1
 rm "${TGZ_FILE}"
 cecho green "Extraction complete."
@@ -129,7 +123,6 @@ if grep -q "tailscaled" "$AUTORUN_SCRIPT_PATH"; then
     cecho yellow "Tailscale daemon already appears to be configured in autostart.sh. Skipping."
 else
     # Add the command to autostart.sh
-    # We run it in a subshell and background it
     {
         echo ""
         echo "# Start Tailscale daemon"
