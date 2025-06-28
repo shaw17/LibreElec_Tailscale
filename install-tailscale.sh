@@ -2,37 +2,37 @@
 
 # This script installs and configures Tailscale on a LibreELEC system.
 # It checks for existing installations and ensures the SSH server is enabled at boot.
-# It can be run multiple times safely. v4 - improved color scheme.
+# It can be run multiple times safely. v5 - high-contrast color scheme.
 
 # --- Configuration ---
 INSTALL_DIR="/storage/tailscale"
 AUTORUN_SCRIPT_PATH="/storage/.config/autostart.sh"
 
-# --- Function to display colored output (POSIX-compliant) ---
+# --- Function to display colored output (High-Contrast) ---
 function cecho {
-    # Using a color scheme that works well on both light and dark backgrounds.
+    # Using a bold, bright color scheme for maximum readability.
     local color_code=""
     case "$1" in
-        # Green for success
-        green)  color_code="\033[0;32m" ;;
-        # Red for errors
-        red)    color_code="\033[0;31m" ;;
-        # Cyan for informational messages
-        info)   color_code="\033[0;36m" ;;
-        # Magenta for commands or highlights
-        cmd)    color_code="\033[0;35m" ;;
-        # Bold for titles
-        bold)   color_code="\033[1m" ;;
+        # Bold Bright Green for success
+        green)  color_code="\033[1;92m" ;;
+        # Bold Bright Red for errors
+        red)    color_code="\033[1;91m" ;;
+        # Bold Bright Cyan for informational messages
+        info)   color_code="\033[1;96m" ;;
+        # Bold Bright Magenta for commands or highlights
+        cmd)    color_code="\033[1;95m" ;;
+        # Standard Bold for titles
+        title)  color_code="\033[1m" ;;
         *)
             echo "$2"
             return
             ;;
     esac
-    local NC="\033[0m"
+    local NC="\033[0m" # No Color
     printf "%b%s%b\n" "${color_code}" "$2" "${NC}"
 }
 
-cecho bold "--- Tailscale Installer & Configurator for LibreELEC ---"
+cecho title "--- Tailscale Installer & Configurator for LibreELEC ---"
 
 # --- Check if running as root ---
 if [ "$(id -u)" -ne 0 ]; then
@@ -46,7 +46,7 @@ if [ -f "${INSTALL_DIR}/tailscaled" ]; then
     INSTALLED_VERSION=$(${INSTALL_DIR}/tailscale --version)
     cecho info "Installed version: ${INSTALLED_VERSION}"
 else
-    cecho bold "Starting new Tailscale installation..."
+    cecho title "Starting new Tailscale installation..."
 
     # Determine Architecture
     ARCH=$(uname -m)
@@ -88,7 +88,7 @@ else
 fi
 
 # --- Configuration Phase ---
-cecho bold "\nVerifying startup configuration..."
+cecho title "\nVerifying startup configuration..."
 
 # Create autostart directory and script if they don't exist
 mkdir -p /storage/.config
@@ -126,19 +126,19 @@ else
 fi
 
 # --- Final Instructions ---
-cecho bold "\n--- Configuration Verified ---"
+cecho title "\n--- Configuration Verified ---"
 echo
-cecho bold "NEXT STEPS:"
+cecho title "NEXT STEPS:"
 echo "1. If this is a new installation, you must run 'tailscale up' manually once to log in."
 echo "   If the device is already on your Tailnet, a reboot is all you need."
 echo
-cecho bold "   To log in for the first time, run this command:"
+cecho title "   To log in for the first time, run this command:"
 cecho cmd "   ${INSTALL_DIR}/tailscale up --ssh"
 echo
 echo "   This will give you a URL to authenticate the device."
 echo
 echo "2. After authenticating, a reboot will ensure the full startup process works correctly."
-cecho bold "   To reboot now, type:"
+cecho title "   To reboot now, type:"
 cecho cmd "   reboot"
 echo
 echo "3. You can then connect to this device from any other machine on your Tailnet by running:"
